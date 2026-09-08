@@ -1,0 +1,1 @@
+/mnt/nas/data/safelab/retreat/lyf-back/chembench/.conda_envs/chembench_isaacsim51/bin/python /data/safelab_fr3_eval_20260819/a100_bench/rl_train.py --task Isaac-Cartpole-Direct-v0 --num_envs 4096 --max_iterations 10 --seed 1 --headless --experience /mnt/nas/data/safelab/retreat/lyf-back/chembench/psilab/apps/isaaclab.python.headless.kit 

@@ -1,0 +1,5 @@
+node=bjxy5090 gpu=0 cc=12.0 mode=collect10
+NVIDIA GeForce RTX 5090, 570.124.06
+48
+ 05:14:33 up  9:03, 20 users,  load average: 10.91, 11.87, 10.27
+ 05:23:47 up  9:13, 20 users,  load average: 176.75, 92.92, 43.46

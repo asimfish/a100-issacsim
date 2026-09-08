@@ -1,0 +1,12 @@
+T0=1788901643.273002012 2026-09-08T21:07:23+00:00
+T1=1788906489.0 2026-09-08T22:28:09+00:00 rc=0 wall=4845.7 (reconstructed: main script aborted by stale syntax error after play.py exit; T1=mtime of last video)
+1788902819./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_001.mp4 episode_001.mp4
+1788903175./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_002.mp4 episode_002.mp4
+1788903562./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_003.mp4 episode_003.mp4
+1788903956./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_004.mp4 episode_004.mp4
+1788904341./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_005.mp4 episode_005.mp4
+1788904717./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_006.mp4 episode_006.mp4
+1788905125./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_007.mp4 episode_007.mp4
+1788905505./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_008.mp4 episode_008.mp4
+1788905946./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_009.mp4 episode_009.mp4
+1788906489./data/safelab_fr3_eval_20260819/a100_bench/volcA100/eval10/video/episode_010.mp4 episode_010.mp4

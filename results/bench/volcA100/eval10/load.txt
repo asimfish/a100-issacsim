@@ -1,0 +1,4 @@
+node=volcA100 gpu=1 cc=8.0 mode=eval10
+NVIDIA A100-SXM4-80GB, 535.129.03
+128
+ 21:07:23 up 256 days, 12:29,  0 users,  load average: 46.89, 42.20, 36.93

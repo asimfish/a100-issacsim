@@ -1,0 +1,5 @@
+node=bjxy5090 gpu=0 cc=12.0 mode=rl_franka
+NVIDIA GeForce RTX 5090, 570.124.06
+48
+ 05:26:04 up  9:15, 20 users,  load average: 116.55, 107.36, 56.24
+ 05:28:57 up  9:18, 20 users,  load average: 24.38, 70.54, 50.69

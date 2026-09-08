@@ -1,0 +1,5 @@
+node=bjxy5090 gpu=0 cc=12.0 mode=rl_cartpole
+NVIDIA GeForce RTX 5090, 570.124.06
+48
+ 05:23:47 up  9:13, 20 users,  load average: 176.75, 92.92, 43.46
+ 05:26:04 up  9:15, 20 users,  load average: 126.35, 109.11, 56.52

@@ -1,12 +1,13 @@
 # a100-issacsim — 在没有 RT core 的 A100 上跑 Isaac Sim 渲染评测：要求、实测速度、画质与缺点
 
-> 结论先行（2026-09-08，SafeLab/PsiBot 评测线实测）
+> 结论先行（2026-09-08/09，SafeLab/PsiBot 评测线实测）
 >
 > 1. **能跑，但官方不支持。** NVIDIA Isaac Sim 5.1.0 的系统要求页明确写着 *"GPUs without RT Cores (A100, H100) are not supported."* 我们在 volc 的 A100-SXM4-80G 上以 headless 方式跑 Isaac Sim 5.1 的 RTX 渲染，从 2026-08-31 起累计 185 场正式评测（每场 50 集、三相机 RGB、录像），功能完整、分数与 RTX 5090 一致。
 > 2. **A100 缺的不是硬件，是驱动的图形用户态库。** 同型号 A100 的 30109 之所以跑不起来，是因为驱动按"纯计算"安装：没有 NVIDIA 的 Vulkan ICD、没有 `libnvidia-glcore/eglcore/rtcore/glvkspirv` 等库。装齐与内核模块**同版本**的图形用户态库即可（见 §3、§5）。
 > 3. **速度：单路每集约慢 2 倍，单卡吞吐约为 5090 的 35–50%。** 单路 A100 每集中位 100 s（n=55）vs 5090 每集 46–57 s（n=107）；A100 开 3 路并发每集 274 s（n=83），折算单卡 ≈39 集/小时，与单路 36 集/小时几乎相同——**A100 一路就已跑满，并发只能掩盖等待、不能提高吞吐**。
 > 4. **画质：肉眼不可分。** 同一 ckpt、同一集（同随机种子 → 同初始布局）、两台机各自渲染：15 组对比前 10 帧 SSIM 0.984–0.994（均值 0.990）、PSNR 35–47 dB（均值 40.7 dB）；全片 SSIM 均值 0.992。差异主要来自视频编码码率与策略动作的微小分歧，不是渲染。唯一缺失的渲染特性是 DLSS / DLSS-RR（A100 硬件不支持，Kit 日志有明确告警）。
-> 5. **缺点：** 无官方支持、单路慢 2 倍、并发不增吞吐、长回合任务（12 s pick_place）每集 ~17 min、无 DLSS、启动多 40–60 s。适合做"吞吐型"补种子评测，紧急判决仍放 RTX 5090。
+> 5. **同一工作负载、单路、逐项计时（§6.4，2026-09-09）：** 采集或评测 10 集（含 Kit 启动）5090 ≈ 8.5–9 min，A100 干净估计 ≈ 20 min、在今天被 25 个进程共用的条件下实测 81 min；RL 10 epoch（Cartpole/Franka 4096 envs，无渲染）5090 训练本体 ≈ 10 s、含启动 ≈ 2.5 min；带 tiled 相机 128 envs 训练本体 ≈ 40 s；PsiBot grasp 残差 RL 64 envs 训练本体 ≈ 30 s。A100 的 RL 数字等 volc 空机窗口补测（无渲染负载预期差距 <1.5 倍）。
+> 6. **缺点：** 无官方支持、单路慢 2 倍、并发不增吞吐、长回合任务（12 s pick_place）每集 ~17 min、无 DLSS、启动多 40–60 s。适合做"吞吐型"补种子评测，紧急判决仍放 RTX 5090。
 
 仓库内容：`README.md`（本文）、`results/`（速度与画质数据表）、`media/side_by_side/`（15 个左右并排对比视频，左 = volc A100，右 = bjxy RTX 5090）、`media/frames/`（截帧）、`raw/`（两台机的环境探测原始输出）、`scripts/`（计时/对比脚本，可复现）。
 
@@ -188,6 +189,59 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all ...   # 宿主机驱动�
 
 8 个交叉评测的 ckpt 中 6 个分数完全一致；两个不一致的（alcohol_lamp16k s3951、beaker250 s3951）都是本身处于不稳定区间的模型，差异在评测随机性（物体随机位、PhysX 非确定）范围内。
 
+### 6.4 受控基准：同一工作负载、单路、逐项计时（2026-09-09 05:06 起；bjxy 已完成，volc 进行中）
+
+§6.2/6.3 是从历史评测日志里"事后"统计的；这一节是**专门跑的对照基准**：两台机用完全相同的代码树（`/mnt/nas/.../chembench` + 同一份 patched `psilab_tasks`）、相同命令行、相同种子、相同渲染配置（TAA quality profile），**每台机只开 1 个基准进程、固定在 1 张卡上**，脚本 `scripts/bench_isaac.sh`，每 5 s 采样一次该卡的利用率 / 共用该卡的进程数 / 1 分钟 loadavg 作为"背景负载"记录（`results/bench/<node>/<mode>/gpu_samples.csv`），汇总脚本 `scripts/bench_summary.py`。
+
+五个工作负载：
+
+| 编号 | 工作负载 | 命令要点 |
+|---|---|---|
+| E | **评测 10 集**：PsiBot grasp `clear_reagent_bottle_large`，ACT relabel-16k s3951，seed 42，6 s 单集，±1 cm 随机，三相机 RGB，每集录像 | `imitation_learning/play.py --max_episode 10 --record_video --video_episodes 10` |
+| C | **采集 10 集**：PsiBot grasp `glass_beaker_100ml` 运动规划采集（cuRobo），seed 14101，三相机 RGB，lerobot 落盘 | `motion_planning/play.py --task Psi-MP-Grasp-v2 --max_episode 10 --target_success_count 10 --enable_lerobot` |
+| R1 | **RL 10 epoch，无渲染**：Isaac Lab `Isaac-Cartpole-Direct-v0`，rl_games PPO，4096 envs | `rl_games/train.py --num_envs 4096 --max_iterations 10 --headless` |
+| R2 | **RL 10 epoch，无渲染，机械臂**：`Isaac-Franka-Cabinet-Direct-v0`，4096 envs | 同上 |
+| R3 | **RL 10 epoch，带相机（tiled 渲染）**：`Isaac-Cartpole-RGB-Camera-Direct-v0`，128 envs | `--enable_cameras`（512 envs 在 32 GB 的 5090 上 OOM，改 128） |
+| R4 | **我们自己的 RL 10 epoch**：`Psi-Direct-RL-Grasp-Beaker100-v1` 残差 RL，64 envs，state 观测（与 `merge_validation_20260623/run_train.sh` 同配方，batch 512） | `scripts_psi/.../rl_games/train.py --max_epoch 10` |
+
+**RTX 5090（bjxy，GPU0）结果**——运行期间该卡还被另一会话的 1 路 DP rollout 占用（`procs_on_gpu≈2`），CPU 48 核 loadavg 12–68，所以这是"轻度共用"而非空机数字：
+
+| | 启动（Kit + 场景加载，到第一集/第一个 epoch 开始） | 稳态单位耗时 | **10 集 / 10 epoch 训练部分** | **总墙钟（含启动）** |
+|---|---|---|---|---|
+| E 评测 10 集 | 78 s | **42.3 s/集**（40–44） | 423 s | **504 s ≈ 8.4 min** |
+| C 采集 10 集 | ~92 s | **46.2 s/集** | 462 s | **554 s ≈ 9.2 min** |
+| R1 Cartpole 4096 envs | 126 s | 1.03 s/epoch（131072 帧/epoch，≈127k fps） | **10.8 s** | 137 s |
+| R2 Franka-Cabinet 4096 envs | 162 s | 0.94 s/epoch（65536 帧/epoch，≈70k fps） | **9.7 s** | 172 s |
+| R3 Cartpole 相机 128 envs | 163 s | 3.83 s/epoch（8192 帧/epoch，≈2.1k fps） | **39.6 s** | 202 s |
+| R4 PsiBot grasp 残差 RL 64 envs | 180 s | 1.72 s/epoch（512 帧/epoch，≈300 fps） | **29.7 s** | 210 s |
+
+说明：C 的 10 次尝试成功 0/10——这套 `finger_grasp_mode=full` 覆盖是 rep13 为酒精灯/试剂瓶调的，套到 100 ml 烧杯上抓不起来；但每次尝试都走完 26 段规划 + 三相机渲染 + 录像，**计时不受成功与否影响**（两台机同种子、同轨迹）。R3 的 rgb_state 版 PsiBot RL（`CHEMBENCH_DIRECT_RL_OBS_MODE=rgb_state`）两次都在第 2 个 epoch 因策略输出 NaN 崩溃（`normal expects all elements of std >= 0.0`），是该模式本身的问题，已从基准中去掉。
+
+**A100（volc，GPU1）结果**——见下表。**必须先说清楚背景**：基准运行的整个时段，volc 上另一个项目（`goal34_prep`/`safeot_w2` 的 safety-gym RL）在两张卡上跑着 **481 个** `fdpi_train_*` 进程（每张卡 34 个 CUDA 上下文），基准所在的 GPU1 在 E 全程平均被 **25.2 个进程共用**，128 核的 loadavg 均值 44（峰值 121）。这些数字反映的是"被重度共用的 A100"，**不是 A100 硬件本身**；同一台机在 §6.2 里单路无并发的历史中位数是 100 s/集。
+
+| | 启动 | 稳态单位耗时 | 10 集 / 10 epoch 训练部分 | 总墙钟（含启动） | 背景 |
+|---|---|---|---|---|---|
+| E 评测 10 集 | **768 s** | **407.8 s/集**（356–543） | 4078 s | **4846 s ≈ 81 min** | GPU1 被 25.2 个进程共用，load 44，GPU util 仅 44% |
+| C 采集 10 集 | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
+| R1 Cartpole 4096 envs | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
+| R2 Franka-Cabinet 4096 envs | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
+| R3 Cartpole 相机 128 envs | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
+| R4 PsiBot grasp 残差 RL 64 envs | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
+
+**怎么读这两张表（结论）：**
+
+1. **采集/评测（单路 Isaac + 渲染）**：5090 上 10 集 ≈ 8–9 分钟（其中启动约 1.5 分钟，之后每集 42–46 s）。A100 的"干净"估计只能用 §6.2 的单路历史中位数：每集 ≈ 100 s，10 集 ≈ 17 分钟 + 启动 2–3 分钟 ≈ **20 分钟，约为 5090 的 2.2 倍**；今天在重度共用条件下实测每集 **408 s（5090 的 9.6 倍）**，且 GPU util 只有 44%——GPU 并没被算满，时间花在 25 个进程轮转上下文与 CPU 排队上，说明 A100 一旦被别的 CUDA 进程分时，Isaac 的大量小 kernel 会被拖得非常慢。
+2. **RL 训练（无渲染）**：10 个 epoch 的训练本体只有 10 秒量级，绝大部分墙钟是 Kit 启动 + 场景生成（2–3 分钟）。这类负载不吃 RT core，A100 与 5090 的差距应当远小于渲染负载——见 volc 表 R1/R2。
+3. **RL 训练（带相机）**：tiled 渲染走的还是 RTX 光栅/光追管线，A100 会像评测一样吃亏——见 R3。
+4. **我们自己的 grasp 残差 RL（state）**：瓶颈是 PhysX 里 PsiBot 灵巧手的接触求解（64 envs 只有 ≈300 fps），不在渲染，两台机差距同样应当不大。
+
+5. **公平的 A100 数字还欠一次"空机窗口"**：volc 上那 481 个 `fdpi_train_*` 是 `goal34_prep` 的 safety-gym RL（已跑 8.6 h，两张卡各 34 个进程），基准与它们分时共用 GPU。要得到干净的 A100 数字，需要在它们结束后、或经允许 `kill -STOP` 暂停约 40 分钟的窗口里重跑 `bash bench_all.sh 1 volcA100`（脚本已在 `/data/safelab_fr3_eval_20260819/a100_bench/`）。届时本表整列替换。
+
+**目前最可信的一句话答案（同样负载、单路）：**
+- 采集/评测 10 集（含 Kit 启动）：**5090 ≈ 8.5–9 min；A100 ≈ 20 min（干净估计）/ 81 min（今天被重度共用时实测）。**
+- RL 10 epoch（无渲染，4096 envs）：**5090 训练本体 ≈ 10 s、含启动 ≈ 2.5 min；A100 待空机窗口测**——无渲染负载不吃 RT core，预期与 5090 差距在 1–1.5 倍内，而非 2 倍。
+- RL 10 epoch（带 tiled 相机，128 envs）：**5090 训练本体 ≈ 40 s、含启动 ≈ 3.4 min；A100 待测**，预期像评测一样 ≥2 倍。
+
 ---
 
 ## 7. 画质：同一集、两台机各自渲染
@@ -228,6 +282,10 @@ volc 单机渲染示例（pick_place 候选第 1 集，0.5 s 与 5.9 s；grasp �
 
 肉眼与指标都表明：**无 RT core 不改变渲染结果，只改变速度**；缺 DLSS 对 640×480/224×224 的策略输入没有可测影响。
 
+### 7.3 一次看完：15 段并排对比拼成一个视频
+- `media/A100_vs_5090_all_pairs.mp4`（72 s，2.9 MB）：3 s 标题卡 + 15 段并排片段按 ckpt/集序号顺序拼接，**放慢到 0.5× 播放**（原始单集只有 2 s 左右），每段底部字幕标出 ckpt、集序号与该段前 10 帧的 SSIM/PSNR。左 = volc A100，右 = bjxy RTX 5090。
+- 生成脚本：`scripts/concat_sbs.py`（PIL 画字幕条 → ffmpeg vstack + setpts → concat）。
+
 ---
 
 ## 8. 缺点与风险（明确版）
@@ -246,8 +304,31 @@ volc 单机渲染示例（pick_place 候选第 1 集，0.5 s 与 5.9 s；grasp �
 - 长回合任务（pick_place 12 s 等）不要放 A100。
 - 想把 30109 变成评测节点：按 §5 装完整驱动用户态 + 复制 Isaac 环境，预计新增 8 卡 × ~40 集/小时（但受 CPU 超卖影响）。
 
+## 10. DLSS 与 TAA 的区别（以及它对我们这套流水线意味着什么）
+
+两者都是 Isaac Sim **RTX Real-Time 模式**（光栅 + 少量光线追踪的混合渲染）里的**时域抗锯齿后处理**：都靠"相机投影逐帧亚像素抖动 + 用运动矢量把上一帧的结果重投影回来、和当前帧混合"来消除锯齿、抑制闪烁。区别在于"怎么混合"和"在什么分辨率上渲染"。
+
+| | TAA（Temporal Anti-Aliasing） | DLSS（Deep Learning Super Sampling） |
+|---|---|---|
+| 本质 | 手写启发式：邻域裁剪/夹取（neighborhood clamping）决定历史帧能保留多少 | 神经网络（DLSS 2/3 卷积自编码器，DLSS 4 Transformer）学出"该保留多少历史、如何补细节" |
+| 输入分辨率 | = 输出分辨率（不放大） | **低于输出**：Performance 50%、Balanced 58%、Quality 67%（Isaac 里 `/rtx/post/dlss/execMode` 0/1/2）；DLAA 是同一网络跑原生分辨率、只做抗锯齿 |
+| 跑在哪 | 普通 shader/compute 单元，任何 GPU 都行 | **Tensor Core + 驱动里的 NGX 运行库**（`libnvidia-ngx`），且 NVIDIA 只在 GeForce/RTX 系列上开放；A100 有 Tensor Core 但 NGX 不给它 DLSS——volc 日志原文：`NGX cannot find DLSS-RR feature or it is not supported for the current hardware/driver` → `createDLSSContext error ... Optional DLSS feature is disabled` |
+| 速度 | 后处理开销很小，但渲染本身是全分辨率 | 渲染只算 1/2～1/4 像素，**帧时间大幅下降**；这是 DLSS 的主要收益 |
+| 画质 | 运动物体拖影（ghosting）、整体偏软、细线闪烁；静止几帧后收敛 | 同等输入下更锐、拖影更少；但会"脑补"细节，结果依赖网络版本与驱动，**跨机器/跨驱动版本不逐像素可复现** |
+| 光追降噪 | 不管 | DLSS-RR（Ray Reconstruction）可替代传统降噪器；A100 同样不可用 |
+| 确定性 | 同版本 Isaac + 同输入 → 结果稳定 | 网络版本一变结果就变，且 Performance 档在 640×480 相机上等于只渲染 320×240 再放大 |
+
+**对我们这套流水线的含义：**
+
+1. Isaac Lab 的默认是 `antialiasing_mode="DLSS"`、`dlss_mode=0`（Performance，内部渲染只有输出分辨率的一半）。**我们的任务代码没有用这个默认**：`psilab_tasks/imitation_learning/base/base_mp_task.py` 里 `CHEMBENCH_RENDER_PROFILE` 默认 `quality` → `_chembench_reference_taa_render_cfg()`，即 **TAA + 半透明 + 阴影，SPP=1，不开反射/GI/AO/DL 降噪**；IL 评测（`base_il_task.py:104`）和 MP 采集都走同一个函数。代码注释里写明原因："The default DLSS realtime profile is fast, but it produces visible artifacts on transparent lab glass on RTX 50-series drivers"——透明玻璃器皿上 DLSS 会出伪影，所以 5090 上我们**本来就用 TAA**。
+2. 因此 **A100 缺 DLSS 对我们零影响**：两台机跑的是同一条 TAA 路径，这就是 §7 里前 10 帧 SSIM 0.99 / PSNR 46 dB 的原因。A100 慢，慢在**光线追踪落在 CUDA core 上**（半透明玻璃的折射/阴影射线），不是慢在少了 DLSS。
+3. 如果将来想拿 DLSS 换速度：只能在 RTX 卡上开（`CHEMBENCH_MP_REF_AA=DLSS`），并且训练集与评测必须用同一档、同一驱动版本，否则观测分布会漂移；对 224×224 的策略输入，DLSS Performance 等于把相机真实渲染分辨率降到 320×240 再放大，得先验证成功率不掉。DLAA（原生分辨率 + 网络抗锯齿）画质最好但没有速度收益。
+
+---
+
 ## 附录
 - `raw/volc_env_probe.txt`、`raw/30109_env_probe.txt`：两台机驱动/库/ICD/设备节点/Isaac 版本的原始探测输出。
 - `results/volc_all_evals_timing.tsv`、`results/bjxy_all_evals_timing.tsv`：每场评测的每集中位耗时、并发、分辨率。
 - `results/quality_table.md`：画质对比表。
+- `results/bench/<node>/<mode>/`：§6.4 受控基准的命令行、计时、每 5 s 的 GPU/负载采样与日志摘要；`scripts/bench_isaac.sh`、`scripts/bench_all.sh`、`scripts/bench_summary.py`。
 - 官方要求页：<https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/requirements.html>（"GPUs without RT Cores (A100, H100) are not supported."）

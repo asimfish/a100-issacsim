@@ -1,0 +1,10 @@
+fps step: 2401 fps step and policy inference: 2030 fps total: 1609 epoch: 1/10 frames: 0
+fps step: 2278 fps step and policy inference: 2114 fps total: 2038 epoch: 2/10 frames: 8192
+fps step: 2560 fps step and policy inference: 2359 fps total: 2255 epoch: 3/10 frames: 16384
+fps step: 2624 fps step and policy inference: 2407 fps total: 2323 epoch: 4/10 frames: 24576
+fps step: 2497 fps step and policy inference: 2297 fps total: 2218 epoch: 5/10 frames: 32768
+fps step: 2301 fps step and policy inference: 2137 fps total: 2059 epoch: 6/10 frames: 40960
+fps step: 2364 fps step and policy inference: 2192 fps total: 2120 epoch: 7/10 frames: 49152
+fps step: 2285 fps step and policy inference: 2125 fps total: 2046 epoch: 8/10 frames: 57344
+fps step: 2415 fps step and policy inference: 2237 fps total: 2137 epoch: 9/10 frames: 65536
+fps step: 2324 fps step and policy inference: 2151 fps total: 2091 epoch: 10/10 frames: 73728

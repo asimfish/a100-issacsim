@@ -1,0 +1,5 @@
+node=bjxy5090 gpu=0 cc=12.0 mode=rl_psi_rgb
+NVIDIA GeForce RTX 5090, 570.124.06
+48
+ 06:05:51 up  9:55, 20 users,  load average: 71.14, 57.38, 45.87
+ 06:15:05 up 10:04, 20 users,  load average: 72.99, 66.59, 55.91

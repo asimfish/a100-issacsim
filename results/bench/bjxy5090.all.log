@@ -1,0 +1,19 @@
+DONE eval10 rc=0 wall=503.9s
+DONE collect10 rc=0 wall=554.0s
+DONE rl_cartpole rc=0 wall=136.8s
+DONE rl_franka rc=0 wall=172.1s
+DONE rl_cartpole_cam rc=1 wall=60.6s
+ALL_DONE
+DONE rl_cartpole_cam rc=2 wall=1.8s
+bench_isaac.sh: line 38: 2317601 Killed                  timeout -k 60s 7200s "${CMD[@]}" > "$OUT/cmd.log" 2>&1
+bench_isaac.sh: line 39: syntax error near unexpected token `)'
+bench_isaac.sh: line 39: `4 --learning_rate 3e-4 --mini_epochs 2 --disable_tensorboard --disable_mixed_precision --headless --enable_cameras --disable_particle_fluids --log_path "$OUT/run" --experience "$KIT");;'
+DONE rl_psi_state rc=0 wall=169.9s
+/data/safelab_fr3_eval_20260819/a100_bench/bench_isaac.sh: line 40: 2365515 Killed                  timeout -k 60s 7200s "${CMD[@]}" > "$OUT/cmd.log" 2>&1
+DONE rl_psi_rgb rc=137 wall=628.2s
+PSI_DONE2
+DONE rl_psi_state rc=0 wall=210.1s
+/data/safelab_fr3_eval_20260819/a100_bench/bench_isaac.sh: line 40: 2423193 Killed                  timeout -k 60s 7200s "${CMD[@]}" > "$OUT/cmd.log" 2>&1
+DONE rl_psi_rgb rc=137 wall=554.1s
+DONE rl_cartpole_cam rc=0 wall=202.2s
+PSI_DONE3
