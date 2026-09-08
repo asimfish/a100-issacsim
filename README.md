@@ -296,7 +296,7 @@ volc 单机渲染示例（pick_place 候选第 1 集，0.5 s 与 5.9 s；grasp �
 4. **无 DLSS / DLSS-RR**：降噪/上采样退回到普通 TAA 路径；实测对画面与分数无可测影响，但耗时更长。
 5. **CPU 与编码**：视频编码（libx264）与部分 PhysX 在 CPU；CPU 被超卖的共享节点（如 30109）上会进一步变慢。
 6. **驱动运维成本**：图形用户态库必须与内核模块同版本、为本机 glibc 构建；纯计算镜像/节点需要有 root 权限补装。
-7. **重度共用时连设备都可能建不起来**：volc 上同卡有 34 个别的 CUDA 进程（loadavg 45–80）时，Isaac Kit 的 Vulkan 设备创建失败（`vkCreateDevice ERROR_INITIALIZATION_FAILED` → `Failed to create any GPU devices`），随后 PhysX 静默退回 CPU 求解——**进程不会报错退出，而是以无渲染、CPU 物理的状态继续跑**，评测/采集结果会是错的。评测队列必须检查日志里有没有 `switching to software`，见 §6.4 C 行。
+7. **重度共用时连设备都可能建不起来**：volc 上同卡有 34 个别的 CUDA 进程（loadavg 45–80）时，Isaac Kit 的 Vulkan 设备创建失败（`vkCreateDevice ERROR_INITIALIZATION_FAILED` → `Failed to create any GPU devices`），随后 PhysX 静默退回 CPU 求解——**进程不会报错退出，而是以无渲染、CPU 物理的状态继续跑**，评测/采集结果会是错的。今天 22:29 与基准同时启动的一路正式评测（`i224l12-act-ppmf-sm2x8k-s4003`）就中了同一问题，已被杀掉重排。现已在 volc 常驻守卫 `volc_cpu_fallback_guard.sh`：每分钟扫描在跑评测的日志，命中 `switching to software` / `Failed to create any GPU devices` 或 PhysX CUDA 错误 >1000 次即杀进程、删掉空结果行、老化日志让队列自动重跑（`scripts/volc_cpu_fallback_guard.sh`）。
 8. **显存反而不是瓶颈**：80 GB 能放 3–5 个实例，但算力只够 1 路饱和，属"有余的显存、不足的算力"。
 
 ## 9. 使用建议
