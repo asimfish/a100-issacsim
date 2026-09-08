@@ -1,0 +1,4 @@
+node=volcA100 gpu=1 cc=8.0 mode=collect10
+NVIDIA A100-SXM4-80GB, 535.129.03
+128
+ 22:29:27 up 256 days, 13:51,  0 users,  load average: 80.99, 71.42, 56.74

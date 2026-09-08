@@ -1,0 +1,9 @@
+2026-09-08T22:32:03Z [154,609ms] [Warning] [gpu.foundation.plugin] Skipping NVIDIA GPU due CUDA being in bad state: NVIDIA A100-SXM4-80GB
+2026-09-08T22:32:04Z [155,887ms] [Warning] [gpu.foundation.plugin] Skipping NVIDIA GPU due CUDA being in bad state: NVIDIA A100-SXM4-80GB
+2026-09-08T22:35:27Z [358,609ms] [Error] [carb.graphics-vulkan.plugin] vkCreateDevice failed.
+2026-09-08T22:36:10Z [400,988ms] [Warning] [gpu.foundation.plugin] Skipping NVIDIA GPU due CUDA being in bad state: NVIDIA A100-SXM4-80GB
+2026-09-08T22:39:15Z [586,886ms] [Error] [carb.graphics-vulkan.plugin] vkCreateDevice failed.
+2026-09-08T22:39:22Z [593,298ms] [Error] [omni.gpu_foundation_factory.plugin] Failed to create any GPU devices, including an attempt with compatibility mode.
+2026-09-08T22:40:23Z [654,387ms] [Error] [omni.physx.plugin] CUDA libs are present, but no suitable CUDA GPU was found!
+2026-09-08T22:41:17Z [708,695ms] [Warning] [omni.physx.plugin] PhysX warning: GPU solver pipeline failed, switching to software, FILE /builds/omniverse/physics/physx/source/simulationcontroller/src/ScScene.cpp, LINE 781
+2026-09-08T22:41:17Z [708,696ms] [Warning] [omni.physx.plugin] PhysX warning: GPU Bp pipeline failed, switching to software, FILE /builds/omniverse/physics/physx/source/simulationcontroller/src/ScScene.cpp, LINE 789

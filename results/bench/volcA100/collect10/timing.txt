@@ -1,0 +1,2 @@
+T0=1788906567.376277112 2026-09-08T22:29:27+00:00
+ABORTED collect10 at 2026-09-08T22:48:10+00:00: vkCreateDevice ERROR_INITIALIZATION_FAILED under 34-proc co-tenancy; PhysX fell back to CPU; run invalid

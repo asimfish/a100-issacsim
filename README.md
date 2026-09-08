@@ -189,7 +189,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all ...   # 宿主机驱动�
 
 8 个交叉评测的 ckpt 中 6 个分数完全一致；两个不一致的（alcohol_lamp16k s3951、beaker250 s3951）都是本身处于不稳定区间的模型，差异在评测随机性（物体随机位、PhysX 非确定）范围内。
 
-### 6.4 受控基准：同一工作负载、单路、逐项计时（2026-09-09 05:06 起；bjxy 已完成，volc 进行中）
+### 6.4 受控基准：同一工作负载、单路、逐项计时（2026-09-09 05:06 起；bjxy 已完成，volc 只完成 E，其余等空机窗口）
 
 §6.2/6.3 是从历史评测日志里"事后"统计的；这一节是**专门跑的对照基准**：两台机用完全相同的代码树（`/mnt/nas/.../chembench` + 同一份 patched `psilab_tasks`）、相同命令行、相同种子、相同渲染配置（TAA quality profile），**每台机只开 1 个基准进程、固定在 1 张卡上**，脚本 `scripts/bench_isaac.sh`，每 5 s 采样一次该卡的利用率 / 共用该卡的进程数 / 1 分钟 loadavg 作为"背景负载"记录（`results/bench/<node>/<mode>/gpu_samples.csv`），汇总脚本 `scripts/bench_summary.py`。
 
@@ -222,11 +222,11 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all ...   # 宿主机驱动�
 | | 启动 | 稳态单位耗时 | 10 集 / 10 epoch 训练部分 | 总墙钟（含启动） | 背景 |
 |---|---|---|---|---|---|
 | E 评测 10 集 | **768 s** | **407.8 s/集**（356–543） | 4078 s | **4846 s ≈ 81 min** | GPU1 被 25.2 个进程共用，load 44，GPU util 仅 44% |
-| C 采集 10 集 | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
-| R1 Cartpole 4096 envs | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
-| R2 Franka-Cabinet 4096 envs | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
-| R3 Cartpole 相机 128 envs | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
-| R4 PsiBot grasp 残差 RL 64 envs | 进行中（本节随 volc 链路完成逐行补齐；`results/bench/volcA100/` 有原始计时） |
+| C 采集 10 集 | **中止**：Kit 启动阶段 `vkCreateDevice → ERROR_INITIALIZATION_FAILED`，三次重试都"Failed to create any GPU devices"，PhysX 退回 CPU（`GPU solver pipeline failed, switching to software`），该次运行无效，已杀掉；日志 `results/bench/volcA100/collect10/` | 同上，共用进程 34/卡 |
+| R1 Cartpole 4096 envs | 未跑：链路在 C 失败后由我中止，等空机窗口一次跑完 |
+| R2 Franka-Cabinet 4096 envs | 未跑：链路在 C 失败后由我中止，等空机窗口一次跑完 |
+| R3 Cartpole 相机 128 envs | 未跑：链路在 C 失败后由我中止，等空机窗口一次跑完 |
+| R4 PsiBot grasp 残差 RL 64 envs | 未跑：链路在 C 失败后由我中止，等空机窗口一次跑完 |
 
 **怎么读这两张表（结论）：**
 
@@ -296,7 +296,8 @@ volc 单机渲染示例（pick_place 候选第 1 集，0.5 s 与 5.9 s；grasp �
 4. **无 DLSS / DLSS-RR**：降噪/上采样退回到普通 TAA 路径；实测对画面与分数无可测影响，但耗时更长。
 5. **CPU 与编码**：视频编码（libx264）与部分 PhysX 在 CPU；CPU 被超卖的共享节点（如 30109）上会进一步变慢。
 6. **驱动运维成本**：图形用户态库必须与内核模块同版本、为本机 glibc 构建；纯计算镜像/节点需要有 root 权限补装。
-7. **显存反而不是瓶颈**：80 GB 能放 3–5 个实例，但算力只够 1 路饱和，属"有余的显存、不足的算力"。
+7. **重度共用时连设备都可能建不起来**：volc 上同卡有 34 个别的 CUDA 进程（loadavg 45–80）时，Isaac Kit 的 Vulkan 设备创建失败（`vkCreateDevice ERROR_INITIALIZATION_FAILED` → `Failed to create any GPU devices`），随后 PhysX 静默退回 CPU 求解——**进程不会报错退出，而是以无渲染、CPU 物理的状态继续跑**，评测/采集结果会是错的。评测队列必须检查日志里有没有 `switching to software`，见 §6.4 C 行。
+8. **显存反而不是瓶颈**：80 GB 能放 3–5 个实例，但算力只够 1 路饱和，属"有余的显存、不足的算力"。
 
 ## 9. 使用建议
 - A100 节点适合做**吞吐型**评测：补种子、消融对照、非紧急复评；每卡开 1–2 路即可（多开无益）。
