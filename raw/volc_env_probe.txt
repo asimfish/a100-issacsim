@@ -1,0 +1,88 @@
+# volc-a100 environment probe (2026-09-08T18:02:42Z)
+## GPU / driver
+name, driver_version, memory.total [MiB], compute_cap
+NVIDIA A100-SXM4-80GB, 535.129.03, 81920 MiB, 8.0
+NVIDIA A100-SXM4-80GB, 535.129.03, 81920 MiB, 8.0
+CUDA Version: 12.2
+## OS
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+5.4.250-2-velinux1u1-amd64
+ldd (Ubuntu GLIBC 2.35-0ubuntu3.10) 2.35
+## container / capabilities
+dockerenv=no NVIDIA_DRIVER_CAPABILITIES=all uid=0
+## Vulkan ICD / EGL vendor
+/etc/vulkan/icd.d/nvidia_icd.json: {"file_format_version":"1.0.0","ICD":{"library_path":"libGLX_nvidia.so.0","api_version":"1.3.242"}}
+/usr/share/glvnd/egl_vendor.d/10_nvidia.json: {"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_nvidia.so.0"}}
+/usr/share/glvnd/egl_vendor.d/50_mesa.json: {"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_mesa.so.0"}}
+## NVIDIA userspace libraries (/usr/lib/x86_64-linux-gnu)
+libEGL_nvidia.so.0
+libEGL_nvidia.so.535.129.03
+libGLX_nvidia.so.0
+libGLX_nvidia.so.535.129.03
+libcuda.so
+libcuda.so.1
+libcuda.so.535.129.03
+libcudadebugger.so.1
+libcudadebugger.so.535.129.03
+libnvcuvid.so.1
+libnvcuvid.so.535.129.03
+libnvidia-allocator.so.1
+libnvidia-allocator.so.535.129.03
+libnvidia-cfg.so.1
+libnvidia-cfg.so.535.129.03
+libnvidia-egl-gbm.so.1
+libnvidia-egl-gbm.so.1.1.0
+libnvidia-egl-wayland.so.1
+libnvidia-egl-wayland.so.1.1.11
+libnvidia-eglcore.so.535.129.03
+libnvidia-encode.so.1
+libnvidia-encode.so.535.129.03
+libnvidia-fbc.so.1
+libnvidia-fbc.so.535.129.03
+libnvidia-glcore.so.535.129.03
+libnvidia-glsi.so.535.129.03
+libnvidia-glvkspirv.so.535.129.03
+libnvidia-ml.so.1
+libnvidia-ml.so.535.129.03
+libnvidia-ngx.so.1
+libnvidia-ngx.so.535.129.03
+libnvidia-nvvm.so.4
+libnvidia-nvvm.so.535.129.03
+libnvidia-opencl.so.1
+libnvidia-opencl.so.535.129.03
+libnvidia-opticalflow.so
+libnvidia-opticalflow.so.1
+libnvidia-opticalflow.so.535.129.03
+libnvidia-pkcs11-openssl3.so.535.129.03
+libnvidia-pkcs11.so.535.129.03
+libnvidia-ptxjitcompiler.so.1
+libnvidia-ptxjitcompiler.so.535.129.03
+libnvidia-rtcore.so.535.129.03
+libnvidia-tls.so.535.129.03
+libnvidia-vulkan-producer.so
+libnvidia-vulkan-producer.so.535.129.03
+libnvoptix.so.1
+libnvoptix.so.535.129.03
+## device nodes
+/dev/nvidia-modeset /dev/nvidia-uvm /dev/nvidia-uvm-tools /dev/nvidia5 /dev/nvidia7 /dev/nvidiactl  /dev/dri: by-path card6 card8 renderD133 renderD135 
+## kernel driver
+NVRM version: NVIDIA UNIX x86_64 Kernel Module  535.129.03  Thu Oct 19 18:56:32 UTC 2023
+## Isaac Sim (pip)
+isaacsim                   5.1.0.0
+isaacsim-app               5.1.0.0
+isaacsim-core              5.1.0.0
+isaacsim-kernel            5.1.0.0
+torch                      2.7.0+cu128
+warp-lang                  1.11.0
+## Kit startup lines (from an eval log)
+Loading experience file: /mnt/nas/data/safelab/retreat/lyf-back/chembench/psilab/apps/isaaclab.python.headless.rendering.isaac51.kit
+| Driver Version: 535.129.03    | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA A100-SXM4-80GB            | Yes: 0 |     | 81920   MB | 10de      | 0          |
+|     |                                  |        |     |            | 20b2      | 5cb58487.. |
+2026-09-08T11:54:59Z [22,180ms] [Warning] [rtx.postprocessing.plugin] NGX cannot find DLSS-RR feature or it is not supported for the current hardware/driver.
+2026-09-08T11:54:59Z [22,180ms] [Error] [rtx.postprocessing.plugin] createDLSSContext error: unable to initialize context. Optional DLSS feature is disabled.

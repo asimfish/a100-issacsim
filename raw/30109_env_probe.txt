@@ -1,0 +1,57 @@
+# tianyiyun-30109 environment probe (2026-09-08T18:02:46Z)
+## GPU / driver
+name, driver_version, memory.total [MiB], compute_cap
+NVIDIA A100-SXM4-80GB, 580.65.06, 81920 MiB, 8.0
+CUDA Version: 13.0
+## OS
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+5.10.0-136.12.0.86.oe2203sp1.x86_64
+ldd (Ubuntu GLIBC 2.35-0ubuntu3.8) 2.35
+## user
+uid=1000 sudo=yes dockerenv=no
+## Vulkan ICDs present (system)
+/etc/vulkan/icd.d/:
+
+/usr/share/vulkan/icd.d/:
+intel_hasvk_icd.x86_64.json
+intel_icd.x86_64.json
+lvp_icd.x86_64.json
+radeon_icd.x86_64.json
+virtio_icd.x86_64.json
+## NVIDIA userspace libraries present (system)
+libcuda.so
+libcuda.so.1
+libcuda.so.580.65.06
+libcudadebugger.so.1
+libcudadebugger.so.580.65.06
+libnvidia-allocator.so.1
+libnvidia-allocator.so.580.65.06
+libnvidia-cfg.so.1
+libnvidia-cfg.so.580.65.06
+libnvidia-gpucomp.so.580.65.06
+libnvidia-ml.so.1
+libnvidia-ml.so.580.65.06
+libnvidia-nvvm.so.4
+libnvidia-nvvm.so.580.65.06
+libnvidia-opencl.so.1
+libnvidia-opencl.so.580.65.06
+libnvidia-pkcs11-openssl3.so.580.65.06
+libnvidia-pkcs11.so.580.65.06
+libnvidia-ptxjitcompiler.so.1
+libnvidia-ptxjitcompiler.so.580.65.06
+(none of libnvidia-glcore/eglcore/rtcore/glvkspirv/vulkan-producer present)
+## packages
+libvulkan1:amd64 1.3.204.1-2
+mesa-vulkan-drivers:amd64 23.2.1-1ubuntu3.1~22.04.3
+nvtop 1.2.2-1
+vulkan-tools 1.3.204.0+dfsg1-1
+## device nodes
+ls: cannot access '/dev/dri': No such file or directory /dev/nvidia-modeset /dev/nvidia-uvm /dev/nvidia-uvm-tools /dev/nvidia0 /dev/nvidia1 /dev/nvidia2 /dev/nvidia3 /dev/nvidia4 /dev/nvidia5 /dev/nvidia6 /dev/nvidia7 /dev/nvidiactl 
+## kernel driver
+NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  580.65.06  Release Build  (dvs-builder@U22-I3-AF03-09-1)  Sun Jul 27 06:54:38 UTC 2025
+## injected-library experiment (nvgfx65 = userspace libs 580.65.06 extracted elsewhere)
+libEGL_nvidia.so.0 libEGL_nvidia.so.580.65.06 libGLESv1_CM_nvidia.so.1 libGLESv2_nvidia.so.0 libGLESv2_nvidia.so.580.65.06 libGLX_nvidia.so.0 libGLX_nvidia.so.580.65.06 libnvcuvid.so.580.65.06 libnvidia-allocator.so.580.65.06 libnvidia-api.so.1 libnvidia-cfg.so.580.65.06 libnvidia-egl-gbm.so.1.1.2 libnvidia-egl-wayland.so.1.1.19 libnvidia-eglcore.so.580.65.06 libnvidia-encode.so.580.65.06 libnvidia-fbc.so.580.65.06 libnvidia-glcore.so.580.65.06 libnvidia-glsi.so.580.65.06 libnvidia-glvkspirv.so.580.65.06 libnvidia-gpucomp.so.580.65.06 libnvidia-ngx.so.580.65.06 libnvidia-nvvm.so.580.65.06 libnvidia-nvvm70.so.4 libnvidia-opticalflow.so.580.65.06 libnvidia-ptxjitcompiler.so.580.65.06 libnvidia-rtcore.so.580.65.06 libnvidia-tls.so.580.65.06 libnvoptix.so.580.65.06 libvulkan.so.1 libvulkan.so.1.3.204 
+ERROR: [Loader Message] Code 0 : loader_scanned_icd_add: Could not get 'vkCreateInstance' via 'vk_icdGetInstanceProcAddr' for ICD /home/dataset-local/yf_recovery/nvgfx65/lib/libGLX_nvidia.so.0
+ERROR at ./vulkaninfo/vulkaninfo.h:649:vkCreateInstance failed with ERROR_INCOMPATIBLE_DRIVER
+   3659334:	/home/dataset-local/yf_recovery/nvgfx65/lib/libnvidia-glcore.so.580.65.06: error: symbol lookup error: undefined symbol: __malloc_hook (fatal)
+   3659334:	/home/dataset-local/yf_recovery/nvgfx65/lib/libnvidia-glcore.so.580.65.06: error: symbol lookup error: undefined symbol: __realloc_hook (fatal)

@@ -1,0 +1,253 @@
+# a100-issacsim — 在没有 RT core 的 A100 上跑 Isaac Sim 渲染评测：要求、实测速度、画质与缺点
+
+> 结论先行（2026-09-08，SafeLab/PsiBot 评测线实测）
+>
+> 1. **能跑，但官方不支持。** NVIDIA Isaac Sim 5.1.0 的系统要求页明确写着 *"GPUs without RT Cores (A100, H100) are not supported."* 我们在 volc 的 A100-SXM4-80G 上以 headless 方式跑 Isaac Sim 5.1 的 RTX 渲染，从 2026-08-31 起累计 185 场正式评测（每场 50 集、三相机 RGB、录像），功能完整、分数与 RTX 5090 一致。
+> 2. **A100 缺的不是硬件，是驱动的图形用户态库。** 同型号 A100 的 30109 之所以跑不起来，是因为驱动按"纯计算"安装：没有 NVIDIA 的 Vulkan ICD、没有 `libnvidia-glcore/eglcore/rtcore/glvkspirv` 等库。装齐与内核模块**同版本**的图形用户态库即可（见 §3、§5）。
+> 3. **速度：单路每集约慢 2 倍，单卡吞吐约为 5090 的 35–50%。** 单路 A100 每集中位 100 s（n=55）vs 5090 每集 46–57 s（n=107）；A100 开 3 路并发每集 274 s（n=83），折算单卡 ≈39 集/小时，与单路 36 集/小时几乎相同——**A100 一路就已跑满，并发只能掩盖等待、不能提高吞吐**。
+> 4. **画质：肉眼不可分。** 同一 ckpt、同一集（同随机种子 → 同初始布局）、两台机各自渲染：15 组对比前 10 帧 SSIM 0.984–0.994（均值 0.990）、PSNR 35–47 dB（均值 40.7 dB）；全片 SSIM 均值 0.992。差异主要来自视频编码码率与策略动作的微小分歧，不是渲染。唯一缺失的渲染特性是 DLSS / DLSS-RR（A100 硬件不支持，Kit 日志有明确告警）。
+> 5. **缺点：** 无官方支持、单路慢 2 倍、并发不增吞吐、长回合任务（12 s pick_place）每集 ~17 min、无 DLSS、启动多 40–60 s。适合做"吞吐型"补种子评测，紧急判决仍放 RTX 5090。
+
+仓库内容：`README.md`（本文）、`results/`（速度与画质数据表）、`media/side_by_side/`（15 个左右并排对比视频，左 = volc A100，右 = bjxy RTX 5090）、`media/frames/`（截帧）、`raw/`（两台机的环境探测原始输出）、`scripts/`（计时/对比脚本，可复现）。
+
+---
+
+## 1. 官方立场与我们的实测
+
+| | 官方（Isaac Sim 5.1.0 Requirements） | 我们的实测（volc-a100） |
+|---|---|---|
+| GPU | 最低 RTX 4080；"GPUs without RT Cores (A100, H100) are not supported" | 2× A100-SXM4-80GB（GA100，compute capability 8.0，无 RT core） |
+| 驱动 | Linux 580.65.06 | 535.129.03（CUDA 12.2），完整图形用户态库 |
+| OS | Ubuntu 22.04/24.04 | Ubuntu 22.04.5，内核 5.4.250（veLinux），glibc 2.35 |
+| 显示 | — | 无 X server；headless，Graphics API = Vulkan |
+| Isaac Sim | 5.1 | pip `isaacsim 5.1.0.0`（conda env `chembench_isaacsim51`，Python 3.11）+ Isaac Lab + psilab/chembench |
+| 渲染 | RTX 实时渲染 | 同一 RTX 渲染器；光线求交在 CUDA core 上执行；DLSS 不可用 |
+| 结果 | — | 185 场 × 50 集正式评测；与 5090 交叉验证的 8 个 ckpt 中 6 个分数完全一致 |
+
+官方"不支持"的含义是：不做测试与保证、不提供支持；并不是驱动层面拒绝运行。Kit 启动日志（`raw/volc_env_probe.txt`）里可见 A100 被枚举为 Vulkan 设备并被渲染器接受，仅 DLSS 初始化失败：
+
+```
+| Driver Version: 535.129.03    | Graphics API: Vulkan
+| 0   | NVIDIA A100-SXM4-80GB            | Yes: 0 |     | 81920   MB | 10de      | 0          |
+[Warning] [rtx.postprocessing.plugin] NGX cannot find DLSS-RR feature or it is not supported for the current hardware
+[Error]   [rtx.postprocessing.plugin] createDLSSContext error: unable to initialize context. Optional DLSS feature is disabled.
+```
+
+---
+
+## 2. 为什么 A100 能渲染（原理）
+
+- Omniverse/Isaac Sim 的 RTX 渲染器基于 **Vulkan**，光线追踪走 NVIDIA 的 RT 扩展；在有 RT core 的 GPU（Turing 之后的 GeForce/RTX PRO）上求交由 RT core 硬件执行，在没有 RT core 的 GA100/GH100 上由驱动退回到 **CUDA core 的软件 BVH 遍历**。功能等价、速度更慢。
+- 因此 A100 渲染所需的是：**支持 Vulkan 1.3 的完整 NVIDIA 驱动用户态栈** + 渲染器本身。A100 的 Vulkan 支持是驱动自带的（volc 上 ICD 报 api_version 1.3.242）。
+- 硬件上真正缺的只有两项：RT core（→ 慢）与 DLSS 所需的特性（→ 无 DLSS/DLSS-RR 降噪、上采样）。
+
+---
+
+## 3. 让 A100 支持 Isaac Sim 渲染需要什么（逐项要求）
+
+### 3.1 硬件
+| 项 | 要求 | 说明 |
+|---|---|---|
+| GPU | A100 40G/80G（SXM 或 PCIe），或 H100 | 需驱动提供 Vulkan 1.3；compute capability ≥ 8.0 |
+| 显存 | 每个 Isaac 实例 9–16 GB（三相机 480×640 + PhysX GPU + 策略推理） | 80G 卡可放 3–5 个实例，但吞吐在 1 路时已饱和（§6） |
+| CPU/内存 | 与官方一致：≥8 核、≥32 GB | PhysX 部分算力、视频编码（libx264）都在 CPU；CPU 被超卖会显著拖慢（30109 负载 90–170/128 核） |
+| 网络 | 首次需拉 Isaac 资产/shader；之后可离线 | 我们用 `HF_HUB_OFFLINE=1`、本地资产 |
+
+### 3.2 驱动（关键）
+1. **必须是完整版驱动用户态**，不能是"纯计算/headless"安装：
+   - `.run` 安装器**不要**加 `--no-opengl-files`；
+   - Ubuntu 包：装 `nvidia-driver-XXX`（普通版），或在 `nvidia-headless-XXX` 之上补 `libnvidia-gl-XXX`、`libnvidia-extra-XXX`、`libnvidia-common-XXX`；
+   - 容器：宿主机驱动完整 + `NVIDIA_DRIVER_CAPABILITIES=all`（或 `graphics,compute,utility,display`）。
+2. **用户态库版本必须与内核模块版本完全一致**（例如内核模块 580.65.06 就只能配 580.65.06 的库；开源内核模块 `nvidia-open` 也一样）。
+3. **必须使用为该系统 glibc 构建的库**。从别的机器/发行版拷来的库不可用：30109 上用 `LD_LIBRARY_PATH` 注入一套 580.65.06 库时，`libnvidia-glcore` 因 `undefined symbol: __malloc_hook`（glibc ≥ 2.34 移除）无法加载，Vulkan 报 `ERROR_INCOMPATIBLE_DRIVER`（`raw/30109_env_probe.txt`）。
+4. 版本：≥ 535 实测可用（volc 535.129.03）；Isaac Sim 5.1 官方推荐 580.65.06。
+5. 内核模块：`nvidia`、`nvidia_uvm`、`nvidia_modeset`（提供 `/dev/nvidia-modeset`，30109 已有）；`nvidia_drm`/`/dev/dri` **不需要**（volc 有、30109 无，均可）。
+
+需要存在的文件（以 volc 535.129.03 为例，位于 `/usr/lib/x86_64-linux-gnu/`）：
+```
+libGLX_nvidia.so.0            # Vulkan ICD 实际入口（ICD json 指向它）
+libEGL_nvidia.so.0            # EGL（headless 相机/离屏）
+libnvidia-glcore.so.535.*     libnvidia-eglcore.so.535.*   libnvidia-glsi.so.535.*
+libnvidia-glvkspirv.so.535.*  libnvidia-rtcore.so.535.*    libnvidia-tls.so.535.*
+libnvidia-allocator.so.535.*  libnvidia-vulkan-producer.so  libnvidia-ngx.so.535.*（DLSS，A100 上加载但不可用）
+libcuda.so.1  libnvidia-ml.so.1  libnvidia-ptxjitcompiler.so.1  libnvidia-nvvm.so.4   # 计算部分（纯计算安装也有）
+```
+以及注册文件：
+```
+/etc/vulkan/icd.d/nvidia_icd.json          {"ICD":{"library_path":"libGLX_nvidia.so.0","api_version":"1.3.242"}}
+/usr/share/glvnd/egl_vendor.d/10_nvidia.json  {"ICD":{"library_path":"libEGL_nvidia.so.0"}}
+```
+外加 Vulkan loader：`libvulkan1`（≥1.3）与 `vulkan-tools`（用于 `vulkaninfo` 验证）。
+
+### 3.3 软件
+- Isaac Sim 5.1.0（pip `isaacsim==5.1.0.0` 全套 + Isaac Lab）；Python 3.11；PyTorch 2.x CUDA 12。
+- 我们的评测栈：psilab/chembench（`isaaclab.python.headless.rendering.isaac51.kit` 体验文件），运行参数 `--headless --enable_cameras`。
+- 首次启动会编译 RTX shader（数分钟），之后由 Kit 缓存复用；每场评测 Kit 启动到第一集约 100–170 s。
+
+### 3.4 验证清单（装好后逐条检查）
+```bash
+nvidia-smi --query-gpu=name,driver_version --format=csv        # 版本 = 内核模块版本
+cat /proc/driver/nvidia/version                                  # 内核模块版本
+ls /etc/vulkan/icd.d/ /usr/share/vulkan/icd.d/                   # 必须有 nvidia_icd.json
+ldconfig -p | grep -E "libnvidia-(glcore|rtcore|glvkspirv|vulkan-producer)|libGLX_nvidia"
+vulkaninfo --summary | grep -E "deviceName|driverVersion|apiVersion"   # 期望 deviceName = NVIDIA A100...
+# Isaac 冒烟：跑 1 集，日志中应出现 "Graphics API: Vulkan" 与 A100 行；DLSS 告警是预期的、可忽略
+```
+
+---
+
+## 4. 安装步骤（三种路径，任选其一）
+
+**A. `.run` 安装器（推荐，可只装用户态）**
+```bash
+# 与 /proc/driver/nvidia/version 同版本的安装包，例如 580.65.06
+sudo sh NVIDIA-Linux-x86_64-580.65.06.run --no-kernel-module --no-x-check --dkms=no
+# 不要加 --no-opengl-files；--no-kernel-module 只更新用户态库，不碰已加载的内核模块
+sudo apt install -y libvulkan1 vulkan-tools
+vulkaninfo --summary | grep -E "deviceName|driverVersion"
+```
+
+**B. Ubuntu/Debian 包**
+```bash
+# 假设已装 nvidia-headless-580 / nvidia-driver-580-open（内核模块 580.65.06）
+sudo apt install -y libnvidia-gl-580=580.65.06-0ubuntu1 libnvidia-extra-580=580.65.06-0ubuntu1 libnvidia-common-580=580.65.06-0ubuntu1 libvulkan1 vulkan-tools
+# 版本号必须与已装内核模块一致；apt-cache policy libnvidia-gl-580 查可用版本
+```
+
+**C. 容器**
+```bash
+docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all ...   # 宿主机驱动本身必须是完整版
+# 镜像内需要 libvulkan1、Vulkan ICD 由 nvidia-container-toolkit 注入（要求宿主机有 libGLX_nvidia / libEGL_nvidia）
+```
+
+然后部署 Isaac Sim 5.1 + Isaac Lab + 评测代码（我们直接复制 volc 的 conda 环境 `chembench_isaacsim51` 与 chembench 代码树到本地 NVMe），用 `--headless --enable_cameras` 跑一集冒烟。
+
+---
+
+## 5. 案例：30109（同型号 A100，目前跑不了）的差距与修法
+
+| 项 | volc（可用） | 30109（不可用） |
+|---|---|---|
+| GPU / 驱动 | A100-80G / 535.129.03 | A100-80G / 580.65.06（开源内核模块） |
+| NVIDIA Vulkan ICD | `/etc/vulkan/icd.d/nvidia_icd.json` | **无**（仅 Mesa 的 intel/radeon/lvp/virtio ICD） |
+| 图形用户态库 | glcore/eglcore/glsi/glvkspirv/rtcore/tls/vulkan-producer 齐全 | **全无**（只有 CUDA 计算库） |
+| EGL vendor | `10_nvidia.json` | 无 |
+| `/dev/nvidia-modeset` | 有 | 有（内核侧已具备） |
+| `/dev/dri` | 有 | 无（不影响） |
+| Vulkan loader | 有 | 有（libvulkan1 1.3.204、vulkan-tools 已装） |
+| 权限 | root | uid 1000，**有 sudo** |
+| Isaac 环境 | 已部署 | 未部署 |
+
+已尝试且失败的捷径：把别处提取的 580.65.06 用户态库放到 `/home/dataset-local/yf_recovery/nvgfx65/` 并用 `VK_ICD_FILENAMES`/`LD_LIBRARY_PATH` 注入 → `libnvidia-glcore.so.580.65.06: undefined symbol: __malloc_hook` → `vkCreateInstance` 失败（`ERROR_INCOMPATIBLE_DRIVER`）。原因是这套库不是为 30109 的 glibc 构建的。
+
+可行修法（需 sudo，约 1–2 小时；未执行，等 owner/管理员批准）：
+1. `sudo sh NVIDIA-Linux-x86_64-580.65.06.run --no-kernel-module --no-x-check` 装完整用户态（或 apt 装 `libnvidia-gl-580=580.65.06-*`）；
+2. `vulkaninfo --summary` 看到 A100；
+3. 从 volc 复制 `chembench_isaacsim51` 环境与 chembench 代码到 `/home/dataset-local/`，配置资产路径；跑 1 集冒烟；
+4. 注意：30109 是共享节点，CPU 长期超卖（负载 90–170 / 128 核），Isaac 单场评测会比 volc 更慢；驱动库安装影响全机用户（只增加图形库，不改内核模块与 CUDA）。
+
+---
+
+## 6. 速度：A100（volc）vs RTX 5090（bjxy）
+
+### 6.1 方法
+- 评测协议相同：PsiBot grasp，nosdf50，50 集/场，物体 xy ±1 cm 随机，6 s 单集，三相机 RGB，每集录像；ACT 策略 img224。
+- **每集耗时 = 相邻两集视频文件落盘时间之差**（每集结束即写 mp4），取一场 50 集的中位数；对全部有 ≥10 集视频的场次统计（volc 185 场、bjxy 158 场，`results/*_all_evals_timing.tsv`）。
+- **并发数**来自各自评测队列日志中 `EVAL_START`/视频结束时间的重叠计数（只统计本队列，其他会话的进程未计入，因此是下界）。
+- 脚本：`scripts/all_timing.py`、`scripts/pair_timing.py`、`scripts/vid_timing.sh`。
+
+### 6.2 大样本结果（grasp，每集中位秒数）
+| 节点 | 同卡并发 | 分辨率 | 场次 n | 每集中位 (s) | 范围 (s) | 折算单卡吞吐（集/小时） |
+|---|---|---|---|---|---|---|
+| **A100 volc** | 1 | 480×640 | 55 | **100** | 35–271 | ≈ 36 |
+| A100 volc | 2 | 224 | 11 | 215 | 111–589 | ≈ 33 |
+| A100 volc | 3 | 224 | 83 | **274** | 117–1285 | ≈ 39 |
+| A100 volc | 4 | 224 | 4 | 230 | 208–289 | ≈ 63（样本少） |
+| **5090 bjxy** | 1 | 224 | 62 | **46** | 18–163 | ≈ 78 |
+| 5090 bjxy | 1 | 480×640 | 45 | 57 | 21–150 | ≈ 63 |
+| 5090 bjxy | 2 | 224 | 19 | 62 | 39–175 | ≈ 116 |
+
+解读：
+- **单路每集：A100 ≈ 100 s，5090 ≈ 46–57 s → 慢约 1.8–2.2 倍。**
+- **A100 上并发几乎不增加吞吐**：1 路 36 集/h，3 路 39 集/h——一路就把 GPU 跑满了（无 RT core 时渲染完全落在 SM 上，与 PhysX、策略推理争抢）。5090 从 1 路到 2 路吞吐 78→116 集/h，说明它单路时 GPU 并未饱和。
+- 综合：**A100 单卡吞吐约为 5090 的 35–50%**（39 vs 78–116 集/h）。
+- 每场 Kit 启动到第一集：A100 98–167 s，5090 62–129 s（4 组同 ckpt 对照日志）。
+- 长回合任务更吃亏：pick_place 12 s 单集在 volc（3 路并发）每集中位 **1013 s**（n=5），bjxy 6 s 单集每集 132 s（n=3）。
+
+### 6.3 同一 ckpt 的成对对照
+| ckpt（img224） | 5090 每集 (s) / 并发 | A100 每集 (s) / 并发 | 分数 5090 / A100 |
+|---|---|---|---|
+| rlb-alcohol_lamp16k-s3952 | 44 / 2 | 250 / 3 | 50/50 · 50/50 |
+| rlb-alcohol_lamp16k-s3951 | 41 / 1 | 245 / 3 | 28/50 · 37/50 |
+| rlb-clear_volumetric_flask_250ml16k-s3951 | 31 / 3 | 329 / 3 | 50/50 · 50/50 |
+| rlb-clear_reagent_bottle_large16k-s3953 | 23 / 4 | 208 / 4 | 50/50 · 50/50 |
+| rlb-clear_reagent_bottle_large16k-s3951 | 23 / 3 | 186 / 3 | 50/50 · 50/50 |
+| rlb-brown_volumetric_flask_250ml16k-s3951 | 29 / 3 | 166 / 3 | 50/50 · 50/50 |
+| rlb-erlenmeyer_flask__ao_8k-s3961 | 35 / 1 | 327 / 2–3 | 50/50 · 50/50 |
+| rlb8k-glass_beaker_250ml-s3951 | 109 / 1（480×640，25 集） | — | 32/50 · 19/50 |
+
+8 个交叉评测的 ckpt 中 6 个分数完全一致；两个不一致的（alcohol_lamp16k s3951、beaker250 s3951）都是本身处于不稳定区间的模型，差异在评测随机性（物体随机位、PhysX 非确定）范围内。
+
+---
+
+## 7. 画质：同一集、两台机各自渲染
+
+### 7.1 方法
+- 同一 ckpt、同一集序号：评测随机种子固定为 42，两台机的物体初始偏移相同，因此**前 10 帧场景完全一致**，可逐像素比较；之后两台机的策略动作出现微小分歧（PhysX/推理非确定），全片指标仅供参考。
+- 指标：ffmpeg `ssim` / `psnr`（640×480、30 fps）。视频编码参数不同：volc CRF 18/fast（约 540 kbps），bjxy CRF 10/slow（约 1.5 Mbps），因此 PSNR 上限受编码限制。
+- 并排视频：左 = volc A100，右 = bjxy RTX 5090（`media/side_by_side/`，脚本 `scripts/compare_pairs.py`）。
+
+### 7.2 结果（5 个 ckpt × 3 集）
+| pair | ep | SSIM (first 10 f) | PSNR dB (first 10 f) | SSIM (all) | PSNR (all) | volc KB | bjxy KB | video |
+|---|---|---|---|---|---|---|---|---|
+| alcohol_lamp16k_s3952 | 001 | 0.9937 | 46.1 | 0.9936 | 45.3 | 129 | 385 | [mp4](media/side_by_side/alcohol_lamp16k_s3952_ep001_volcA100_vs_bjxy5090.mp4) |
+| alcohol_lamp16k_s3952 | 002 | 0.9856 | 35.1 | 0.9913 | 40.7 | 124 | 359 | [mp4](media/side_by_side/alcohol_lamp16k_s3952_ep002_volcA100_vs_bjxy5090.mp4) |
+| alcohol_lamp16k_s3952 | 003 | 0.9876 | 36.1 | 0.9927 | 42.0 | 124 | 350 | [mp4](media/side_by_side/alcohol_lamp16k_s3952_ep003_volcA100_vs_bjxy5090.mp4) |
+| brown_vol16k_s3951 | 001 | 0.9938 | 46.3 | 0.9943 | 46.6 | 161 | 472 | [mp4](media/side_by_side/brown_vol16k_s3951_ep001_volcA100_vs_bjxy5090.mp4) |
+| brown_vol16k_s3951 | 002 | 0.9862 | 35.4 | 0.9908 | 39.5 | 160 | 444 | [mp4](media/side_by_side/brown_vol16k_s3951_ep002_volcA100_vs_bjxy5090.mp4) |
+| brown_vol16k_s3951 | 003 | 0.9858 | 35.5 | 0.9904 | 38.9 | 151 | 450 | [mp4](media/side_by_side/brown_vol16k_s3951_ep003_volcA100_vs_bjxy5090.mp4) |
+| clear_vol16k_s3951 | 001 | 0.9938 | 46.1 | 0.9938 | 45.4 | 161 | 479 | [mp4](media/side_by_side/clear_vol16k_s3951_ep001_volcA100_vs_bjxy5090.mp4) |
+| clear_vol16k_s3951 | 002 | 0.9940 | 46.1 | 0.9939 | 46.1 | 154 | 460 | [mp4](media/side_by_side/clear_vol16k_s3951_ep002_volcA100_vs_bjxy5090.mp4) |
+| clear_vol16k_s3951 | 003 | 0.9873 | 36.5 | 0.9906 | 40.0 | 155 | 453 | [mp4](media/side_by_side/clear_vol16k_s3951_ep003_volcA100_vs_bjxy5090.mp4) |
+| crbL16k_s3951 | 001 | 0.9940 | 46.6 | 0.9937 | 45.7 | 142 | 406 | [mp4](media/side_by_side/crbL16k_s3951_ep001_volcA100_vs_bjxy5090.mp4) |
+| crbL16k_s3951 | 002 | 0.9893 | 38.5 | 0.9923 | 42.1 | 131 | 374 | [mp4](media/side_by_side/crbL16k_s3951_ep002_volcA100_vs_bjxy5090.mp4) |
+| crbL16k_s3951 | 003 | 0.9940 | 46.6 | 0.9922 | 42.4 | 130 | 364 | [mp4](media/side_by_side/crbL16k_s3951_ep003_volcA100_vs_bjxy5090.mp4) |
+| erlenmeyer_ao_s3961 | 001 | 0.9942 | 46.3 | 0.9930 | 43.8 | 142 | 422 | [mp4](media/side_by_side/erlenmeyer_ao_s3961_ep001_volcA100_vs_bjxy5090.mp4) |
+| erlenmeyer_ao_s3961 | 002 | 0.9839 | 34.9 | 0.9886 | 38.1 | 139 | 383 | [mp4](media/side_by_side/erlenmeyer_ao_s3961_ep002_volcA100_vs_bjxy5090.mp4) |
+| erlenmeyer_ao_s3961 | 003 | 0.9840 | 35.0 | 0.9890 | 38.7 | 144 | 401 | [mp4](media/side_by_side/erlenmeyer_ao_s3961_ep003_volcA100_vs_bjxy5090.mp4) |
+
+汇总：前 10 帧 SSIM 均值 **0.990**（0.984–0.994）、PSNR 均值 **40.7 dB**（35.0–46.6）；全片 SSIM 均值 0.992、PSNR 均值 42.4 dB。第 1 集普遍 46 dB 以上（几乎逐像素相同），第 2/3 集 35–38 dB 主要是动作分歧带来的机械臂姿态差异。
+
+截帧（左 volc / 右 5090，clear_reagent_bottle_large16k s3951 第 1 集 t=1.0 s）：
+
+![side by side](media/frames/crbL16k_s3951_ep001_t1.0s_volc_left_bjxy_right.png)
+
+volc 单机渲染示例（pick_place 候选第 1 集，0.5 s 与 5.9 s；grasp 候选 1.5 s）：
+
+![pp t0.5](media/frames/volc_pickplace_ppmfao_s3961_ep001_t0.5s.png) ![pp t5.9](media/frames/volc_pickplace_ppmfao_s3961_ep001_t5.9s.png) ![grasp](media/frames/volc_grasp_brownL_s3554_ep001_t1.5s.png)
+
+肉眼与指标都表明：**无 RT core 不改变渲染结果，只改变速度**；缺 DLSS 对 640×480/224×224 的策略输入没有可测影响。
+
+---
+
+## 8. 缺点与风险（明确版）
+
+1. **官方不支持**：NVIDIA 不测试、不保证；未来 Isaac 版本若强制要求 RT core 可能失效。目前 5.1 可用。
+2. **慢**：单路每集约 2 倍于 5090；Kit 启动多 40–60 s；长回合（12 s）任务每集可达 15–20 min（3 路并发）。
+3. **并发不增吞吐**：一路即饱和，多路只是把等待时间平摊，单卡上限约 40 集/小时（grasp 6 s 单集）。
+4. **无 DLSS / DLSS-RR**：降噪/上采样退回到普通 TAA 路径；实测对画面与分数无可测影响，但耗时更长。
+5. **CPU 与编码**：视频编码（libx264）与部分 PhysX 在 CPU；CPU 被超卖的共享节点（如 30109）上会进一步变慢。
+6. **驱动运维成本**：图形用户态库必须与内核模块同版本、为本机 glibc 构建；纯计算镜像/节点需要有 root 权限补装。
+7. **显存反而不是瓶颈**：80 GB 能放 3–5 个实例，但算力只够 1 路饱和，属"有余的显存、不足的算力"。
+
+## 9. 使用建议
+- A100 节点适合做**吞吐型**评测：补种子、消融对照、非紧急复评；每卡开 1–2 路即可（多开无益）。
+- 需要快速判决（新数据/新配方首个结果）的评测放 RTX 5090/4090 等有 RT core 的卡。
+- 长回合任务（pick_place 12 s 等）不要放 A100。
+- 想把 30109 变成评测节点：按 §5 装完整驱动用户态 + 复制 Isaac 环境，预计新增 8 卡 × ~40 集/小时（但受 CPU 超卖影响）。
+
+## 附录
+- `raw/volc_env_probe.txt`、`raw/30109_env_probe.txt`：两台机驱动/库/ICD/设备节点/Isaac 版本的原始探测输出。
+- `results/volc_all_evals_timing.tsv`、`results/bjxy_all_evals_timing.tsv`：每场评测的每集中位耗时、并发、分辨率。
+- `results/quality_table.md`：画质对比表。
+- 官方要求页：<https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/requirements.html>（"GPUs without RT Cores (A100, H100) are not supported."）
