@@ -1,0 +1,3 @@
+host=di-20260831162150-5ll6n gpu=0 procs_on_gpu=4 util_before=94 % mps_daemon=1 no_mps=1 load1=19.28
+rc=0
+physx_sw_fallback_lines=0

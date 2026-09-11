@@ -1,0 +1,3 @@
+host=ubuntu-TRX50-AI-TOP gpu=0 procs_on_gpu=4 util_before=37 % mps_daemon=0 no_mps=0 load1=52.81
+rc=0
+physx_sw_fallback_lines=0

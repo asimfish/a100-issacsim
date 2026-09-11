@@ -1,0 +1,3 @@
+/data/safelab_fr3_eval_20260819/a100_bench/bench_isaac.sh: line 55: unexpected EOF while looking for matching `"'
+/data/safelab_fr3_eval_20260819/a100_bench/bench_isaac.sh: line 56: syntax error: unexpected end of file
+CHAIN_ABORTED_BY_OPERATOR 2026-09-08T22:48:10+00:00 (GPU device init failed under contention; rerun in a clean window)

@@ -1,13 +1,13 @@
 # a100-issacsim — 在没有 RT core 的 A100 上跑 Isaac Sim 渲染评测：要求、实测速度、画质与缺点
 
-> 结论先行（2026-09-08/09，SafeLab/PsiBot 评测线实测）
+> 结论先行（2026-09-08/12，SafeLab/PsiBot 评测线实测；09-12 增补 L0–L2 微基准与 MPS 根因）
 >
 > 1. **能跑，但官方不支持。** NVIDIA Isaac Sim 5.1.0 的系统要求页明确写着 *"GPUs without RT Cores (A100, H100) are not supported."* 我们在 volc 的 A100-SXM4-80G 上以 headless 方式跑 Isaac Sim 5.1 的 RTX 渲染，从 2026-08-31 起累计 185 场正式评测（每场 50 集、三相机 RGB、录像），功能完整、分数与 RTX 5090 一致。
 > 2. **A100 缺的不是硬件，是驱动的图形用户态库。** 同型号 A100 的 30109 之所以跑不起来，是因为驱动按"纯计算"安装：没有 NVIDIA 的 Vulkan ICD、没有 `libnvidia-glcore/eglcore/rtcore/glvkspirv` 等库。装齐与内核模块**同版本**的图形用户态库即可（见 §3、§5）。
-> 3. **速度：单路每集约慢 2 倍，单卡吞吐约为 5090 的 35–50%。** 单路 A100 每集中位 100 s（n=55）vs 5090 每集 46–57 s（n=107）；A100 开 3 路并发每集 274 s（n=83），折算单卡 ≈39 集/小时，与单路 36 集/小时几乎相同——**A100 一路就已跑满，并发只能掩盖等待、不能提高吞吐**。
+> 3. **速度要分层说（§6.0）。** L0 **纯渲染**（三相机 640×480 一帧）：A100 ≈ 47 ms vs 5090 ≈ 40 ms，**只慢 ~1.2 倍**；L1 **纯物理**（PhysX 一步 + Kit 每步固定开销）：48 vs 21 ms，慢 2.3 倍；L2 **仿真控制步**（4 物理步 + 1 渲染）：241 vs 134 ms，慢 1.8 倍；L3 **端到端每集**（含策略推理、录像、重置）：单路中位 100 s vs 46–57 s，慢约 2 倍；单卡吞吐约为 5090 的 35–50%，且 A100 开多路不增吞吐（一路已饱和）。结论：**A100 在这套评测里慢 2 倍，主要来自每步固定开销与物理，而不是缺 RT core 的渲染本身**（微基准均在共用卡上测得，空机数字待补）。
 > 4. **画质：肉眼不可分。** 同一 ckpt、同一集（同随机种子 → 同初始布局）、两台机各自渲染：15 组对比前 10 帧 SSIM 0.984–0.994（均值 0.990）、PSNR 35–47 dB（均值 40.7 dB）；全片 SSIM 均值 0.992。差异主要来自视频编码码率与策略动作的微小分歧，不是渲染。唯一缺失的渲染特性是 DLSS / DLSS-RR（A100 硬件不支持，Kit 日志有明确告警）。
-> 5. **同一工作负载、单路、逐项计时（§6.4，2026-09-09）：** 采集或评测 10 集（含 Kit 启动）5090 ≈ 8.5–9 min，A100 干净估计 ≈ 20 min、在今天被 25 个进程共用的条件下实测 81 min；RL 10 epoch（Cartpole/Franka 4096 envs，无渲染）5090 训练本体 ≈ 10 s、含启动 ≈ 2.5 min；带 tiled 相机 128 envs 训练本体 ≈ 40 s；PsiBot grasp 残差 RL 64 envs 训练本体 ≈ 30 s。A100 的 RL 数字等 volc 空机窗口补测（无渲染负载预期差距 <1.5 倍）。
-> 6. **缺点：** 无官方支持、单路慢 2 倍、并发不增吞吐、长回合任务（12 s pick_place）每集 ~17 min、无 DLSS、启动多 40–60 s。适合做"吞吐型"补种子评测，紧急判决仍放 RTX 5090。
+> 5. **L4 任务级墙钟（§6.3，同一工作负载、单路、逐项计时）：** 采集或评测 10 集（含 Kit 启动）5090 ≈ 8.5–9 min，A100 干净估计 ≈ 20 min、在被 25 个进程共用时实测 81 min；RL 10 epoch（Cartpole/Franka 4096 envs，无渲染）5090 训练本体 ≈ 10 s、含启动 ≈ 2.5 min；带 tiled 相机 128 envs 训练本体 ≈ 40 s；PsiBot grasp 残差 RL 64 envs 训练本体 ≈ 30 s。A100 的 RL 数字等 volc 空机窗口补测（无渲染负载预期差距 <1.5 倍）。
+> 6. **缺点：** 无官方支持、端到端单路慢 2 倍、并发不增吞吐、长回合任务（12 s pick_place）每集 ~17 min、无 DLSS、启动多 40–60 s；**同机任何项目开启 CUDA MPS 后 Isaac 进程全部起不来（需 `CUDA_MPS_PIPE_DIRECTORY` 绕过，§8-7）**。适合做"吞吐型"补种子评测，紧急判决仍放 RTX 5090。
 
 仓库内容：`README.md`（本文）、`results/`（速度与画质数据表）、`media/side_by_side/`（15 个左右并排对比视频，左 = volc A100，右 = bjxy RTX 5090）、`media/frames/`（截帧）、`raw/`（两台机的环境探测原始输出）、`scripts/`（计时/对比脚本，可复现）。
 
@@ -149,15 +149,61 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all ...   # 宿主机驱动�
 
 ---
 
-## 6. 速度：A100（volc）vs RTX 5090（bjxy）
+## 6. 速度：先说清楚"哪种速度"
 
-### 6.1 方法
+前几版把"每集 100 s vs 46 s"直接叫"速度"，容易和"渲染速度"混为一谈。这一节先定义，再按层级给数字；**每张表的表头都标明它属于哪一层**。
+
+### 6.0 定义：五个层级
+
+| 层级 | 名称 | 定义（一次计什么） | 单位 | 数据来源 |
+|---|---|---|---|---|
+| **L0** | **纯渲染** render-only | RTX 渲染器把三路 640×480 RGB 相机各出一帧并取回 GPU 张量的时间；**不步进物理、不跑策略、不编码视频** | ms / 帧（三相机一组算一帧） | `scripts/bench_render.py`（微基准） |
+| **L1** | **纯物理** physics-only | PhysX GPU 一步 `dt = 1/120`（TGS 求解器、与评测同参数），**不渲染** | ms / 物理步 | 同上 |
+| **L2** | **仿真控制步** sim control step | 评测里一个 30 Hz 控制步的**仿真部分**：4 个物理子步 + 1 次三相机渲染 + 取回图像；**无策略推理、无录像、无回合重置** | ms / 控制步（6 s 一集 = 180 步） | 同上 |
+| **L3** | **端到端每集** end-to-end per episode | 正式评测流程里一集的墙钟：L2 × 180 + 策略推理（ACT/DP）+ 成功判定 + 视频编码 + 回合重置 | s / 集 | 评测日志（相邻两集视频落盘时间差） |
+| **L4** | **任务级墙钟** job wall-clock | 从命令敲下到结束：Kit 启动 + 场景加载 + N 集或 N 个 epoch | min | 受控基准（§6.3） |
+
+"A100 渲染慢多少"应看 **L0**；"A100 跑评测/采集慢多少"应看 **L3/L4**。两者差别很大（下文），这正是之前表格让人看不懂的原因。
+
+### 6.1 L0–L2 微基准：同一场景、同一代码、逐项计时
+
+**方法。** `scripts/bench_render.py` 用评测同一份 conda 环境、同一个 Kit experience（`isaaclab.python.headless.rendering.isaac51.kit`）、同一 PhysX 配置（TGS，dt 1/120，`render_interval=4`）和同一渲染 profile（`CHEMBENCH_RENDER_PROFILE=quality`，TAA），加载**评测用的真实场景资产**：实验室房间 USD、PsiBot 机器人 USD（含头/胸/第三视角三个相机 prim）、WillowTable、100 ml 烧杯；预热 30 步后分别计 200 帧 L0、800 步 L1、200 步 L2，每次 `torch.cuda.synchronize()` 后取 `perf_counter`，报告中位数与 p10–p90。`scripts/run_bench.sh` 负责与评测脚本完全一致的环境变量，并每 5 s 采样**同一张卡的利用率、共用进程数、loadavg** 记入 `.meta`（`bg_during_measure`）。原始结果在 `results/microbench/`，表由 `scripts/microbench_table.py` 生成。
+
+**背景负载必须一起看。** 两台机都是共享节点：volc 上有另一项目的训练（GPU util 90%+），bjxy 上同时跑着 2–4 路 Isaac 评测。渲染和 Kit 主循环对分时非常敏感（bjxy GPU0 第一次运行时被同卡另 3 路 Isaac 渲染挤到 174 ms/帧，第二次 40 ms/帧），所以下面先列全部运行，再取各项**最小中位数**作为"最接近独占卡"的估计；空机窗口采样器 `scripts/bench_loop.sh` 仍在两台机上运行，一旦某卡 util ≤ 15% 且共用进程 ≤ 2 就补一次干净运行，届时替换本表。
+
+| 节点 / 卡 | 时间 (UTC) | 同卡背景负载 (util / 进程数) | L0 纯渲染 ms/帧 (3 相机 640×480) | L1 纯物理 ms/步 (dt 1/120) | L2 仿真控制步 ms (4 物理步 + 1 渲染) |
+|---|---|---|---|---|---|
+| 5090 bjxy GPU0 | 09-12 01:16Z | 37% / 4（仅启动前快照） | 174 (149–199) | 21 (15–37) | 279 (233–330) |
+| 5090 bjxy GPU1 | 09-12 01:22Z | 88% / 2（仅启动前快照） | 42 (37–48) | 28 (16–46) | 169 (130–221) |
+| 5090 bjxy GPU0 | 09-12 01:27Z | 85% / 4.0 | 40 (36–48) | 21 (16–35) | 134 (115–159) |
+| 5090 bjxy GPU1 | 09-12 01:27Z | 90% / 3.9 | 44 (38–55) | 31 (16–53) | 180 (120–242) |
+| A100 volc GPU0 | 09-11 17:16Z | 94% / 4（仅启动前快照） | 47 (42–60) | 48 (27–56) | 241 (199–293) |
+| A100 volc GPU0 | 09-11 17:27Z | 92% / 3.9 | 51 (44–66) | 48 (27–68) | 248 (193–314) |
+| A100 volc GPU1 | 09-11 17:27Z | 98% / 8.0 | 60 (38–87) | 56 (36–75) | 294 (207–396) |
+
+中位数 (p10–p90)，每项 n=200 帧/步（物理 4n 步），Kit 预热 30 步后计时，`torch.cuda.synchronize()` 后取 `perf_counter`。
+
+| 节点 | 各项取全部运行中的最小中位数（最接近独占卡的估计） | L0 渲染 | L1 物理 | L2 控制步 | 由 L2 推算 6 s 集(180 控制步)的纯仿真时间 |
+|---|---|---|---|---|---|
+| 5090 bjxy | 4 次运行 | 40 ms (24.7 fps) | 21 ms (48 步/s) | 134 ms (7.4 步/s) | 24 s |
+| A100 volc | 3 次运行 | 47 ms (21.4 fps) | 48 ms (21 步/s) | 241 ms (4.1 步/s) | 43 s |
+| **A100 / 5090 倍数** | | **1.16×** | **2.31×** | **1.80×** | |
+
+**怎么读。**
+- **L0 纯渲染：A100 ≈ 47 ms/帧 vs 5090 ≈ 40 ms/帧，只慢约 1.2 倍**（三相机 640×480，quality/TAA）。也就是说，在这套 headless 评测的分辨率下，无 RT core 的 A100 在 CUDA core 上做光线求交，**渲染本身并不是 2 倍的差距**；一帧 40 ms 里相当一部分是 Kit 渲染管线的固定开销（hydra 同步、三路 render product 调度、图像取回），两台机都要付。
+- **L1 纯物理：A100 ≈ 48 ms/步 vs 5090 ≈ 21 ms/步，慢 2.3 倍。** 这一步不含任何渲染，差距来自 PhysX GPU 步进 + Kit 每步的 CPU/USD/Fabric 同步；volc 是 Xeon 8362 @2.8 GHz（128 线程，loadavg 41）而 bjxy 是 TRX50 平台高主频 CPU，且 volc 驱动为 535 系。**A100 节点"慢"的主要来源是每步的固定开销，而不是渲染。**
+- **L2 仿真控制步：A100 ≈ 241 ms vs 5090 ≈ 134 ms，慢 1.8 倍。** 6 s 一集 = 180 个控制步，纯仿真部分 A100 ≈ 43 s、5090 ≈ 24 s。这和 §6.2 里端到端每集 100 s vs 46–57 s 的比例（≈ 2 倍）一致：**端到端的 2 倍差距，来自物理/主循环 2.3 倍 + 渲染 1.2 倍的加权，再叠加策略推理与视频编码。**
+- 以上数字都在**被共用的卡**上测得（表中给出同卡 util 与进程数），是上界；空机数字预期两台机都会下降，比例是否变化待 `bench_loop.sh` 采到干净窗口后更新。
+
+### 6.2 L3 端到端每集：历史评测日志（大样本）
+
+#### 方法
 - 评测协议相同：PsiBot grasp，nosdf50，50 集/场，物体 xy ±1 cm 随机，6 s 单集，三相机 RGB，每集录像；ACT 策略 img224。
 - **每集耗时 = 相邻两集视频文件落盘时间之差**（每集结束即写 mp4），取一场 50 集的中位数；对全部有 ≥10 集视频的场次统计（volc 185 场、bjxy 158 场，`results/*_all_evals_timing.tsv`）。
 - **并发数**来自各自评测队列日志中 `EVAL_START`/视频结束时间的重叠计数（只统计本队列，其他会话的进程未计入，因此是下界）。
 - 脚本：`scripts/all_timing.py`、`scripts/pair_timing.py`、`scripts/vid_timing.sh`。
 
-### 6.2 大样本结果（grasp，每集中位秒数）
+#### 大样本结果（grasp，每集中位秒数）
 | 节点 | 同卡并发 | 分辨率 | 场次 n | 每集中位 (s) | 范围 (s) | 折算单卡吞吐（集/小时） |
 |---|---|---|---|---|---|---|
 | **A100 volc** | 1 | 480×640 | 55 | **100** | 35–271 | ≈ 36 |
@@ -175,7 +221,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all ...   # 宿主机驱动�
 - 每场 Kit 启动到第一集：A100 98–167 s，5090 62–129 s（4 组同 ckpt 对照日志）。
 - 长回合任务更吃亏：pick_place 12 s 单集在 volc（3 路并发）每集中位 **1013 s**（n=5），bjxy 6 s 单集每集 132 s（n=3）。
 
-### 6.3 同一 ckpt 的成对对照
+#### 同一 ckpt 的成对对照
 | ckpt（img224） | 5090 每集 (s) / 并发 | A100 每集 (s) / 并发 | 分数 5090 / A100 |
 |---|---|---|---|
 | rlb-alcohol_lamp16k-s3952 | 44 / 2 | 250 / 3 | 50/50 · 50/50 |
@@ -189,9 +235,19 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all ...   # 宿主机驱动�
 
 8 个交叉评测的 ckpt 中 6 个分数完全一致；两个不一致的（alcohol_lamp16k s3951、beaker250 s3951）都是本身处于不稳定区间的模型，差异在评测随机性（物体随机位、PhysX 非确定）范围内。
 
-### 6.4 受控基准：同一工作负载、单路、逐项计时（2026-09-09 05:06 起；bjxy 已完成，volc 只完成 E，其余等空机窗口）
+### 6.2.1 从 L2 到 L3：时间花在哪
 
-§6.2/6.3 是从历史评测日志里"事后"统计的；这一节是**专门跑的对照基准**：两台机用完全相同的代码树（`/mnt/nas/.../chembench` + 同一份 patched `psilab_tasks`）、相同命令行、相同种子、相同渲染配置（TAA quality profile），**每台机只开 1 个基准进程、固定在 1 张卡上**，脚本 `scripts/bench_isaac.sh`，每 5 s 采样一次该卡的利用率 / 共用该卡的进程数 / 1 分钟 loadavg 作为"背景负载"记录（`results/bench/<node>/<mode>/gpu_samples.csv`），汇总脚本 `scripts/bench_summary.py`。
+| | 5090 bjxy | A100 volc |
+|---|---|---|
+| L2 × 180 步（纯仿真，微基准最小值推算） | ≈ 24 s | ≈ 43 s |
+| L3 端到端每集（评测日志中位数，单路） | 46–57 s | 100 s |
+| 差值 = 策略推理 + 成功判定 + 视频编码 + 回合重置 | ≈ 22–33 s（40–55%） | ≈ 57 s（≈ 55%） |
+
+策略推理（ACT/DP 前向，每控制步一次或每 chunk 一次）、每集 mp4 编码（libx264 crf18）和 PhysX 回合重置在两台机上都占到一半左右的每集墙钟，且它们也吃 GPU/CPU，在共用卡上同样被拉长。
+
+### 6.3 L4 任务级墙钟：同一工作负载、单路、逐项计时（受控基准，2026-09-09；bjxy 已完成，volc 只完成 E，其余等空机窗口）
+
+§6.2 是从历史评测日志里"事后"统计的；这一节是**专门跑的对照基准**：两台机用完全相同的代码树（`/mnt/nas/.../chembench` + 同一份 patched `psilab_tasks`）、相同命令行、相同种子、相同渲染配置（TAA quality profile），**每台机只开 1 个基准进程、固定在 1 张卡上**，脚本 `scripts/bench_isaac.sh`，每 5 s 采样一次该卡的利用率 / 共用该卡的进程数 / 1 分钟 loadavg 作为"背景负载"记录（`results/bench/<node>/<mode>/gpu_samples.csv`），汇总脚本 `scripts/bench_summary.py`。
 
 五个工作负载：
 
@@ -291,12 +347,12 @@ volc 单机渲染示例（pick_place 候选第 1 集，0.5 s 与 5.9 s；grasp �
 ## 8. 缺点与风险（明确版）
 
 1. **官方不支持**：NVIDIA 不测试、不保证；未来 Isaac 版本若强制要求 RT core 可能失效。目前 5.1 可用。
-2. **慢**：单路每集约 2 倍于 5090；Kit 启动多 40–60 s；长回合（12 s）任务每集可达 15–20 min（3 路并发）。
+2. **慢，但慢的主要不是渲染**（§6.0 的层级）：L0 纯渲染只慢约 1.2 倍（47 vs 40 ms/帧，三相机 640×480）；L1 PhysX 步进 + Kit 每步固定开销慢 2.3 倍（48 vs 21 ms）；合成到 L2 控制步 1.8 倍、L3 端到端每集约 2 倍（100 s vs 46–57 s）；Kit 启动多 40–60 s；长回合（12 s）任务每集可达 15–20 min（3 路并发）。
 3. **并发不增吞吐**：一路即饱和，多路只是把等待时间平摊，单卡上限约 40 集/小时（grasp 6 s 单集）。
 4. **无 DLSS / DLSS-RR**：降噪/上采样退回到普通 TAA 路径；实测对画面与分数无可测影响，但耗时更长。
 5. **CPU 与编码**：视频编码（libx264）与部分 PhysX 在 CPU；CPU 被超卖的共享节点（如 30109）上会进一步变慢。
 6. **驱动运维成本**：图形用户态库必须与内核模块同版本、为本机 glibc 构建；纯计算镜像/节点需要有 root 权限补装。
-7. **重度共用时连设备都可能建不起来**：volc 上同卡有 34 个别的 CUDA 进程（loadavg 45–80）时，Isaac Kit 的 Vulkan 设备创建失败（`vkCreateDevice ERROR_INITIALIZATION_FAILED` → `Failed to create any GPU devices`），随后 PhysX 静默退回 CPU 求解——**进程不会报错退出，而是以无渲染、CPU 物理的状态继续跑**，评测/采集结果会是错的。今天 22:29 与基准同时启动的一路正式评测（`i224l12-act-ppmf-sm2x8k-s4003`）就中了同一问题，已被杀掉重排。现已在 volc 常驻守卫 `volc_cpu_fallback_guard.sh`：每分钟扫描在跑评测的日志，命中 `switching to software` / `Failed to create any GPU devices` 或 PhysX CUDA 错误 >1000 次即杀进程、删掉空结果行、老化日志让队列自动重跑（`scripts/volc_cpu_fallback_guard.sh`）。
+7. **与 CUDA MPS 不兼容——同机别的项目一开 MPS，Isaac 全部起不来（09-09 起 volc 所有失败的真根因）**：2026-09-08 22:07Z 另一项目在 volc 上启动了 `nvidia-cuda-mps-control -d`。此后每一个新启动的 Isaac Kit 进程都在 `gpu.foundation` 阶段报 `Skipping NVIDIA GPU due CUDA being in bad state` → `vkCreateDevice ERROR_INITIALIZATION_FAILED` → `Failed to create any GPU devices`，PhysX 随后静默退回 CPU 求解（`GPU solver pipeline failed, switching to software`）；09-11 的日志里进一步出现 `CUDA error 807: MPS server is not ready to accept new MPS client requests`。**进程不会报错退出，而是以无渲染、CPU 物理的状态继续跑**，评测/采集结果会是错的（先前把它归因于"34 个进程重度共用"是误判：MPS 开启前，同样的共用负载下评测一直正常）。**修法**：在 Isaac 进程环境里设 `CUDA_MPS_PIPE_DIRECTORY=/tmp/<不存在的目录>`，让该进程的 CUDA 客户端连不上 MPS 控制守护、按普通（非 MPS）方式建上下文——compute mode 为 Default 时这是允许的，普通进程与 MPS 客户端可以同卡共存。加上这一行后 volc 上 Kit 立刻恢复 `| 0 | NVIDIA A100-SXM4-80GB | Yes: 0 |`（`results/microbench/*_nomps.meta`），评测队列全部恢复。这一条对 RT core 的卡同样适用，不是 A100 特有；但共享型 A100 节点上更容易碰到。另有常驻守卫 `scripts/volc_cpu_fallback_guard.sh`：每分钟扫描在跑评测的日志，命中 `switching to software` / `Failed to create any GPU devices` 或 PhysX CUDA 错误 >1000 次即杀进程、删掉空结果行、老化日志让队列自动重跑。
 8. **显存反而不是瓶颈**：80 GB 能放 3–5 个实例，但算力只够 1 路饱和，属"有余的显存、不足的算力"。
 
 ## 9. 使用建议
@@ -331,5 +387,6 @@ volc 单机渲染示例（pick_place 候选第 1 集，0.5 s 与 5.9 s；grasp �
 - `raw/volc_env_probe.txt`、`raw/30109_env_probe.txt`：两台机驱动/库/ICD/设备节点/Isaac 版本的原始探测输出。
 - `results/volc_all_evals_timing.tsv`、`results/bjxy_all_evals_timing.tsv`：每场评测的每集中位耗时、并发、分辨率。
 - `results/quality_table.md`：画质对比表。
-- `results/bench/<node>/<mode>/`：§6.4 受控基准的命令行、计时、每 5 s 的 GPU/负载采样与日志摘要；`scripts/bench_isaac.sh`、`scripts/bench_all.sh`、`scripts/bench_summary.py`。
+- `results/microbench/`：§6.1 L0–L2 微基准的每次运行 JSON（中位/p10/p90）与 `.meta`（同卡背景负载采样）；`results/microbench/TABLE.md` 为汇总表；脚本 `scripts/bench_render.py`（基准本体）、`scripts/run_bench.sh`（评测同款环境 + 负载采样 + 设备创建失败快速退出）、`scripts/bench_loop.sh`（空机窗口采样器）、`scripts/microbench_table.py`（出表）。
+- `results/bench/<node>/<mode>/`：§6.3 L4 受控基准的命令行、计时、每 5 s 的 GPU/负载采样与日志摘要；`scripts/bench_isaac.sh`、`scripts/bench_all.sh`、`scripts/bench_summary.py`。
 - 官方要求页：<https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/requirements.html>（"GPUs without RT Cores (A100, H100) are not supported."）

@@ -1,0 +1,4 @@
+host=ubuntu-TRX50-AI-TOP gpu=1 procs_on_gpu=3 util_before=95 % mps_daemon=1 no_mps=0 load1=63.27
+rc=0
+bg_during_measure: util_mean=90% util_min=35% mem_used_mean=26.6GB procs_mean=3.9 load1_mean=89 samples=18
+physx_sw_fallback_lines=0

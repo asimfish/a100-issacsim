@@ -1,0 +1,30 @@
+{
+ "gpu": "NVIDIA A100-SXM4-80GB",
+ "cams": 3,
+ "res": "640x480",
+ "concurrency_note": "procs_on_gpu=7 util_before=100 % mps_daemon=1 no_mps=1 load1=35.38",
+ "frames": 200,
+ "render_only_per_frame": {
+  "median_ms": 60.01,
+  "p10_ms": 38.33,
+  "p90_ms": 86.55,
+  "n": 200
+ },
+ "physics_only_per_step_dt1_120": {
+  "median_ms": 56.1,
+  "p10_ms": 36.23,
+  "p90_ms": 74.71,
+  "n": 800
+ },
+ "eval_cadence_per_control_step": {
+  "median_ms": 294.5,
+  "p10_ms": 206.99,
+  "p90_ms": 395.8,
+  "n": 200
+ },
+ "derived": {
+  "render_fps_3cam": 16.7,
+  "physics_steps_per_s": 18.0,
+  "control_steps_per_s_no_policy": 3.4
+ }
+}

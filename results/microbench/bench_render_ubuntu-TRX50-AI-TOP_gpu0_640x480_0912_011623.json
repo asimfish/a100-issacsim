@@ -1,0 +1,30 @@
+{
+ "gpu": "NVIDIA GeForce RTX 5090",
+ "cams": 3,
+ "res": "640x480",
+ "concurrency_note": "procs_on_gpu=4 util_before=37 % mps_daemon=0 no_mps=0 load1=52.81",
+ "frames": 200,
+ "render_only_per_frame": {
+  "median_ms": 174.36,
+  "p10_ms": 148.55,
+  "p90_ms": 199.33,
+  "n": 200
+ },
+ "physics_only_per_step_dt1_120": {
+  "median_ms": 20.72,
+  "p10_ms": 15.07,
+  "p90_ms": 36.56,
+  "n": 800
+ },
+ "eval_cadence_per_control_step": {
+  "median_ms": 279.1,
+  "p10_ms": 233.23,
+  "p90_ms": 329.79,
+  "n": 200
+ },
+ "derived": {
+  "render_fps_3cam": 5.7,
+  "physics_steps_per_s": 48.0,
+  "control_steps_per_s_no_policy": 3.6
+ }
+}

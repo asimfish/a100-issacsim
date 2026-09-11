@@ -1,0 +1,4 @@
+host=di-20260831162150-5ll6n gpu=1 procs_on_gpu=7 util_before=100 % mps_daemon=1 no_mps=1 load1=35.38
+rc=0
+bg_during_measure: util_mean=98% util_min=93% mem_used_mean=49.2GB procs_mean=8.0 load1_mean=41 samples=13
+physx_sw_fallback_lines=0
